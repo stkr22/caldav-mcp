@@ -1,0 +1,47 @@
+name: Build arm64 image
+
+# The upstream image is amd64-only; the cluster is arm64. This builds an exact
+# upstream tag, unmodified, on a native arm runner (no emulation).
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Upstream tag to build, e.g. v0.2.1
+        default: v0.2.1
+        required: true
+        type: string
+  push:
+    paths: [".github/workflows/arm64.yaml"]
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    env:
+      TAG: ${{ inputs.tag || 'v0.2.1' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/stkr22/caldav-mcp:${{ env.TAG }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/stkr22/caldav-mcp
+            org.opencontainers.image.licenses=MIT
