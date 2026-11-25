@@ -1,134 +1,103 @@
-"""Typed error classes, structured tool results, and server-side logging.
+"""Typed tool failures and their translation into messages an agent can act on.
 
-This module owns the machine-readable ``ToolResult`` object that every
-:mod:`caldav_mcp.tools` handler returns instead of a hand-formatted string.  A
-small set of status codes (see :class:`Status`) replaces the ad-hoc
-``ERROR:[auth]`` / ``OK:`` prefixes that were previously coupled to user-facing
-text, so clients and tests can branch on a typed field rather than parsing
-magic strings.
+Every failure leaves a tool as :class:`fastmcp.exceptions.ToolError`, which the
+protocol reports with ``isError=true``. The message is written in this server's
+own voice, so any value it repeats (a UID, a calendar name, a server's own error
+text) goes through :func:`caldav_mcp.sanitize.quoted` first.
 """
 
+from __future__ import annotations
+
 import logging
-from dataclasses import dataclass
-from enum import StrEnum
-from typing import Any
+
+import niquests.exceptions as net
+from caldav.lib import error as dav
+from fastmcp.exceptions import ToolError
+
+from caldav_mcp.sanitize import defuse_auto_fetch, quoted
 
 log = logging.getLogger("caldav-mcp")
 
-
-class CalDAVError(Exception):
-    """Base class for all caldav-mcp operational errors."""
+_MAX_SERVER_TEXT = 300
 
 
-class AuthError(CalDAVError):
-    """Raised when CalDAV credentials are missing or invalid."""
+class ToolInputError(ValueError):
+    """The call's arguments are wrong. The message says how to correct them."""
 
 
-class NotFoundError(CalDAVError):
-    """Raised when a requested calendar or event does not exist."""
+class EventNotFoundError(LookupError):
+    """No event with that UID (or recurrence) exists."""
 
 
-class ServerError(CalDAVError):
-    """Raised for unexpected internal faults that should be logged server-side."""
+class CalendarNotFoundError(LookupError):
+    """No calendar with that name exists."""
 
 
-class Status(StrEnum):
-    """Machine-readable result status used by every tool.
-
-    Replaces the ad-hoc ``ERROR:[...]`` / ``OK:`` string prefixes with a small,
-    well-defined set of codes so callers never have to parse text to learn the
-    outcome of a tool call.
-    """
-
-    OK = "ok"
-    EMPTY = "empty"
-    AUTH = "auth"
-    NOT_FOUND = "not_found"
-    ERROR = "error"
+class ConflictError(RuntimeError):
+    """The event changed on the server since it was read; nothing was written."""
 
 
-@dataclass
-class ToolResult:
-    """Structured result returned by every :mod:`caldav_mcp.tools` handler.
-
-    Attributes
-    ----------
-    status : Status
-        Machine-readable outcome (see :class:`Status`).
-    message : str
-        Human-readable text describing the outcome.  This is decoupled from
-        control flow; clients/tests branch on :attr:`status`, not on text.
-    data : Any
-        Optional structured payload (event dicts, event lists, etc.).
-    """
-
-    status: Status
-    message: str = ""
-    data: Any = None
-
-    @property
-    def ok(self) -> bool:
-        """True when the call succeeded (ok or empty), i.e. not a failure."""
-        return self.status in (Status.OK, Status.EMPTY)
-
-    @classmethod
-    def success(cls, message: str = "", data: Any = None) -> "ToolResult":
-        """Build a successful result (``status=ok``)."""
-        return cls(status=Status.OK, message=message, data=data)
-
-    @classmethod
-    def empty(cls, message: str = "") -> "ToolResult":
-        """Build a successful-but-empty result (found/no-results state)."""
-        return cls(status=Status.EMPTY, message=message)
-
-    @classmethod
-    def failure(cls, status: Status, message: str = "") -> "ToolResult":
-        """Build a failure result for the given typed status."""
-        return cls(status=status, message=message)
-
-    def render(self) -> str:
-        """Serialize to the final user-facing string.
-
-        This is the *only* place a human-readable string is produced; control
-        flow and tests branch on :attr:`status`/``data`` instead.
-        """
-        # Tag mapping preserves backward compatibility with clients that parse
-        # "OK:" / "ERROR:[...]" prefixes from the rendered string.
-        tag = {
-            Status.OK: "OK",
-            Status.EMPTY: "OK",
-            Status.AUTH: "ERROR:[auth]",
-            Status.NOT_FOUND: "ERROR:[not_found]",
-            Status.ERROR: "ERROR:[server]",
-        }[self.status]
-        return f"{tag} {self.message}".strip()
+class ResultTooLargeError(RuntimeError):
+    """An answer cannot be shrunk below the size ceiling."""
 
 
-def _render_error(exc: Exception, context: str) -> ToolResult:
-    """Classify a caught exception into a structured :class:`ToolResult`.
-
-    ``AuthError`` → ``Status.AUTH``, ``NotFoundError`` → ``Status.NOT_FOUND``,
-    anything else is treated as an unexpected internal fault, logged server-side
-    (never leaking secret/credential material), and returned as ``Status.ERROR``.
-    """
-    # Exception classification: known operational errors are surfaced to the
-    # caller with their original message; anything else is an unexpected fault
-    # that gets logged server-side without leaking details.
-    if isinstance(exc, AuthError):
-        return ToolResult.failure(Status.AUTH, str(exc))
-    if isinstance(exc, NotFoundError):
-        return ToolResult.failure(Status.NOT_FOUND, str(exc))
-    if isinstance(exc, ValueError):
-        return ToolResult.failure(Status.ERROR, str(exc))
-    return _log_exception(exc, context)
+_STATUS_HINTS: dict[int, str] = {
+    401: "Check CALDAV_USERNAME and CALDAV_PASSWORD; most hosted services want an app-specific password.",
+    403: "The server accepted the login and refused the action; this is usually a permission on the calendar.",
+    404: "The event or calendar is gone; list it again.",
+    405: "The server does not allow that method here; CALDAV_URL may not be a CalDAV endpoint.",
+    409: "The parent collection does not exist; the calendar may have been deleted.",
+    412: "The event changed on the server since it was read, so nothing was written. Read it again and retry.",
+    415: "The server rejected the content type; a proxy in front of it may be rewriting requests.",
+    423: "The event is locked on the server.",
+    429: "The server is rate limiting this account; wait a moment and retry.",
+    507: "The account is out of storage quota.",
+}
 
 
-def _log_exception(exc: Exception, context: str) -> ToolResult:
-    """Log an unexpected exception and return a sanitized error result.
+def _server_text(exc: dav.DAVError) -> str:
+    reason = getattr(exc, "reason", "") or ""
+    if not reason or reason == "no reason":
+        return ""
+    return " Server said (untrusted text): " + quoted(defuse_auto_fetch(str(reason)), _MAX_SERVER_TEXT)
 
-    The returned :class:`ToolResult` never includes raw exception strings or
-    credential material that might leak secrets; the exact message is logged
-    server-side via :meth:`logging.Logger.exception`.
-    """
-    log.exception("Unhandled error in %s", context)
-    return ToolResult.failure(Status.ERROR, "Internal error")
+
+_OWN_ERRORS = (ToolInputError, EventNotFoundError, CalendarNotFoundError, ConflictError, ResultTooLargeError)
+
+
+def _dav_message(exc: dav.DAVError) -> str:
+    """Describe a failed CalDAV request, naming the status and what to do about it."""
+    status = getattr(exc, "status", None)
+    if isinstance(exc, dav.ETagMismatchError | dav.ScheduleTagMismatchError):
+        return _STATUS_HINTS[412]
+    if isinstance(exc, dav.NotFoundError):
+        return "Not found on the server. " + _STATUS_HINTS[404]
+    if isinstance(exc, dav.AuthorizationError):
+        hint = _STATUS_HINTS.get(status or 0, _STATUS_HINTS[401])
+        return f"The CalDAV server refused the request (HTTP {status or '401/403'}). {hint}"
+    hint = _STATUS_HINTS.get(status or 0, "")
+    shown = f" (HTTP {status})" if status else ""
+    return f"The CalDAV server returned an error{shown}. {hint}{_server_text(exc)}".strip()
+
+
+def _network_message(exc: BaseException) -> str | None:
+    if isinstance(exc, net.Timeout):
+        return "The CalDAV server did not answer in time. Retry; if it keeps happening the server is slow or down."
+    if isinstance(exc, net.ConnectionError | net.SSLError):
+        return "Could not reach the CalDAV server (connection or TLS failure); this is not a problem with the request."
+    return None
+
+
+def to_tool_error(exc: BaseException, tool: str) -> ToolError:
+    """Translate any exception into a ToolError the agent can act on."""
+    if isinstance(exc, ToolError):
+        return exc
+    if isinstance(exc, _OWN_ERRORS):
+        return ToolError(str(exc))
+    if isinstance(exc, dav.DAVError):
+        return ToolError(_dav_message(exc))
+    network = _network_message(exc)
+    if network is not None:
+        return ToolError(network)
+    log.error("Unhandled error in %s", tool, exc_info=exc)
+    return ToolError("Internal error; details are in the server log.")

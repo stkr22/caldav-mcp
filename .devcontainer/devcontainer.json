@@ -1,0 +1,57 @@
+{
+  "name": "caldav-mcp",
+  // Node 26 matches the Dockerfile base image (engines: node >=24). The image is
+  // set in compose.yml, next to the Radicale container the integration suite uses.
+  "dockerComposeFile": "compose.yml",
+  "service": "app",
+  "remoteUser": "vscode",
+  "workspaceFolder": "/workspaces/caldav-mcp",
+  "features": {
+    "ghcr.io/stkr22/devcontainer-features/uv:1.2.1": {},
+    "ghcr.io/stkr22/devcontainer-features/claude-code:4.1.0": {},
+		"ghcr.io/devcontainer-community/devcontainer-features/starship.rs:1": {}
+  },
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-python.python",
+				"samuelcolvin.jinjahtml",
+				"streetsidesoftware.code-spell-checker",
+				"christian-kohler.path-intellisense",
+				"charliermarsh.ruff",
+				"ms-python.mypy-type-checker",
+				"tamasfe.even-better-toml",
+				"github.vscode-github-actions",
+				"oderwat.indent-rainbow",
+				"mhutchie.git-graph",
+				"vivaxy.vscode-conventional-commits"
+			],
+			"settings": {
+				"files.trimFinalNewlines": true,
+				"files.trimTrailingWhitespace": true,
+				"files.insertFinalNewline": true,
+				"[python]": {
+					"editor.formatOnSave": true,
+					"editor.codeActionsOnSave": {
+						"source.fixAll": "explicit",
+						"source.organizeImports": "explicit"
+					},
+					"editor.defaultFormatter": "charliermarsh.ruff"
+				},
+				"python.defaultInterpreterPath": "/workspaces/.venv/bin/python",
+				"python.testing.unittestEnabled": false,
+				"python.testing.pytestEnabled": true,
+				"cSpell.files": [
+					"src"
+				]
+			}
+		}
+	},
+  "remoteEnv": {
+    "CLAUDE_CODE_OAUTH_TOKEN": "${localEnv:CLAUDE_CODE_OAUTH_TOKEN}"
+  },
+	"postCreateCommand": {
+		"uv-sync": "uv sync --all-packages --group dev",
+		"uv-prek": "uv tool run prek install",
+	}
+}

@@ -1,70 +1,95 @@
+[build-system]
+requires = ["uv_build>=0.13,<0.14"]
+build-backend = "uv_build"
+
 [project]
 name = "caldav-mcp"
-version = "0.2.1"
-description = "MCP server for CalDAV calendar integration (read/write events), Streamable HTTP transport"
-requires-python = ">=3.11"
+version = "0.3.0"
+description = "MCP server that gives an LLM agent compact, safe read/write access to a CalDAV calendar over Streamable HTTP"
+authors = [
+    { name = "stkr22" }
+]
+readme = "README.md"
+requires-python = ">=3.15"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.15",
+]
 dependencies = [
-    "icalendar==7.2.2",
-    "caldav==3.2.1",
-    "fastmcp==3.4.7",
-    "requests>=2.28.0",
-    "cryptography>=44.0.1",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0.0",
-    "pytest-timeout>=2.1.0",
-    "pytest-benchmark>=4.0.0",
-    "ruff>=0.6.0",
-    "mypy>=1.10.0",
-    "types-requests>=2.31.0",
-]
-docs = [
-    "sphinx>=7.0",
-    "sphinx-rtd-theme>=2.0",
+    "caldav>=3.7",
+    "fastmcp>=4.2",
+    "icalendar>=7.3",
+    "lxml>=6.0",
+    "python-dateutil>=2.9",
+    "recurring-ical-events>=3.8",
+    "niquests>=3.15",
+    "tzdata>=2025.2",
 ]
 
 [project.scripts]
-caldav-mcp = "server:main"
-caldav-mcp-config = "caldav_mcp.config_cli:main"
+caldav-mcp = "caldav_mcp.app:main"
+caldav-mcp-probe = "caldav_mcp.probe:main"
 
 [project.urls]
-Documentation = "https://github.com/gelse/caldav-mcp/tree/main/docs"
-Repository = "https://github.com/gelse/caldav-mcp"
+Homepage = "https://github.com/stkr22/caldav-mcp"
+Issues = "https://github.com/stkr22/caldav-mcp/issues"
+Documentation = "https://github.com/stkr22/caldav-mcp/tree/main/docs"
+Repository = "https://github.com/stkr22/caldav-mcp"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14",
+    "ty>=0.0.1a20",
+    "pytest>=8.4",
+    "pytest-cov>=6",
+    "pytest-timeout>=2.4",
+]
+
+[tool.uv]
+required-version = ">=0.13"
+
+[tool.uv.build-backend]
+module-root = ""
+module-name = "caldav_mcp"
+
+[tool.ty.rules]
+possibly-unresolved-reference = "warn"
+unused-ignore-comment = "warn"
 
 [tool.pytest.ini_options]
+minversion = "8.0"
+addopts = ["-ra", "-q"]
 testpaths = ["tests"]
+pythonpath = ["."]  # tests import shared helpers as `tests.*`
+timeout = 60
 markers = [
     "unit: pure unit tests with no external dependencies",
-    "integration: tests against a live CalDAV server (Radicale via Docker)",
-    "performance: benchmarks and load tests",
+    "integration: tests against a live CalDAV server (Radicale; see tests/integration/conftest.py)",
     "slow: tests that take more than a few seconds",
 ]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-only-include = [
-    "server.py",
-    "caldav_mcp",
-]
 
 [tool.ruff]
-line-length = 100
-target-version = "py311"
+line-length = 120
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP"]
+select = [
+    "E", "F", "I", "UP", "N", "B", "C4", "RET", "SIM", "ARG", "PTH", "W", "Q",
+    "TID", "ICN", "PIE", "ERA", "PL", "RUF", "ASYNC", "D", "S",
+]
+ignore = [
+    "E203",
+    "D203",  # Incompatible with D211
+    "D213",  # Incompatible with D212
+    "PLR0913",  # MCP tool signatures are their parameter lists
+    "PLR0917",
+]
 
-[tool.mypy]
-python_version = "3.11"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = false  # Start permissive; tighten incrementally
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/**/*.py" = ["E501", "S101", "S105", "S106", "S107", "PLR2004", "D", "ARG001", "ARG002"]
 
-[[tool.mypy.overrides]]
-module = ["caldav", "fastmcp.*"]
-ignore_missing_imports = true
+[tool.ty.environment]
+extra-paths = ["tests"]

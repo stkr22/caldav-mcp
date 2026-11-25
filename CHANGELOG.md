@@ -1,62 +1,54 @@
 # Changelog
 
-## v0.2.1 (2026-10-26)
+## 0.3.0 - unreleased
 
-### Fixed
-- **`caldav_update_event` start/end updates (#19):** updating an event's `start`/`end` no longer fails with "Internal error" — DTSTART/DTEND are now serialized as valid RFC 5545 date-times (values wrapped in `vDatetime`) and a stale DTEND or DURATION is dropped when the end is updated.
+A rewrite for an LLM agent doing everyday calendar work. **Breaking**; see "Migrating" below.
 
-## v0.2.0 (2026-10-26)
-
-### Features
-- **Read-only mode (#12):** `CALDAV_MCP_READ_ONLY` flag hides write tools at registration; only the 8 read-only tools are exposed to MCP clients.
-- **Pro mode / user database (#17):** `DB_CONFIG_ENABLED=true` loads config and users from a SQLite store. DB-user endpoint auth (`X-Mcp-Username` + Bearer / `X-Api-Key`), multi-remote fan-out reads with per-remote aggregation, dotted-path write addressing (`config.remote.calendar`), partial-failure reporting, multi-remote integration tests (two-Radicale suite).
-- **Config store & CLI (M3):** SQLite-backed `caldav-mcp-config` CLI for managing users, configs, remotes, and calendars; Fernet encryption of CalDAV passwords at rest (`CALDAV_MCP_CONFIG_SECRET`).
-
-### Changed
-- **Breaking (M1):** CalDAV credential resolution is now mode-based — when `CALDAV_URL` is set, `X-Caldav-*` headers are ignored entirely (no per-field mixing); when unset, all three `X-Caldav-*` headers are required per request.
-- **Breaking (M4):** `CALDAV_MCP_API_KEY` is ignored in pro mode; only DB-stored user credentials are accepted.
-
-### Fixed
-- DST-seasonal flakiness in `test_now_carries_server_timezone` — the test now freezes the clock to a fixed mid-DST instant, so the UTC-offset assertion is deterministic year-round (#23).
-- Removed personal CalDAV values from `.env.example` (#23).
-
-### New environment variables
-- `DB_CONFIG_ENABLED` (default: `false`)
-- `CALDAV_MCP_DB_PATH` (default: `""`)
-- `CALDAV_MCP_CONFIG_SECRET` (default: `""`)
-
-### Upgrade notes
-- **M1:** clients relying on `X-Caldav-*` headers overriding env vars must drop `CALDAV_URL` and use header mode.
-- **M4:** in pro mode use `X-Mcp-Username` + DB-stored key instead of `CALDAV_MCP_API_KEY`.
-- Configuration changes require a server restart (no hot reload).
-
-## v0.1.1 (2026-09-11)
-
-### Fixed
-- DAVClient SSL verify kwarg (`ssl_verify` → `ssl_verify_cert`) so `CALDAV_MCP_CALDAV_VERIFY_SSL=false` works (#8)
+### Added
+- Relative and flexible dates for reads (`today`, `tomorrow`, `this_weekend`, `last_month`, `next_14_days`, weekday
+  names), a configurable week start, inclusive date-only ends, and an echo of the exact range and the current time in
+  every answer.
+- `caldav_search_events`: several words, per-field conditions, `all`/`any`/`none`, ordering, a time range, server-side
+  narrowing where the server provably agrees (re-checked locally), and an account of where matching happened.
+- `scope` (`series`, `instance`, `this_and_future`) for changing and deleting repeating events; required, never guessed.
+- Conditional writes (ETag / `If-Match`), idempotent create, overlap report on create, `clear` for removing fields,
+  reminders, categories, all-day events and repeat rules on create and update.
+- `CALDAV_ALLOW_TOOLS` / `CALDAV_DENY_TOOLS` (names, one `prefix*`, or `essential`); unknown names stop the server.
+- Untrusted-text handling: invisible characters, auto-fetch markup, injection-shape flags, fenced single events.
+- `GET /health`; `caldav-mcp-probe` (read-only capability report that prints no event content).
+- Integration tests against real Radicale; CI starts one.
 
 ### Changed
-- CI: Docker image now tagged `testing` for the testing branch; workflow permissions fix (#9)
-- Docs: improved `caldav_search_events` tool docstring to guide callers
+- Reads cover **all calendars** unless some are named (before, the first calendar only, silently).
+- Answers are one compact JSON object (`untrusted`, `source`, ...) instead of `{status, message, data}`; failures are
+  `isError` tool errors with actionable text. Long answers are cut to 60 kB by whole events, with a note.
+- `caldav_get_freebusy` returns merged busy blocks, free gaps and `available` (before, a list of events).
+- `caldav_move_event` keeps the event's uid and uses WebDAV `MOVE` (before, a copy with a new uid).
+- Updating no longer destroys moved or cancelled occurrences of a repeating event.
+- The API key is required to start and checked before any MCP request, `tools/list` included; the rate limiter uses
+  the TCP peer instead of a header nobody could set.
+- Python 3.15, FastMCP 4, python-caldav 3.7, icalendar 7.3; `Containerfile` on Debian trixie; no compose file.
 
-## v0.1.0 (2026-08-21)
+### Removed
+- Tools: `caldav_get_today_events`, `caldav_get_week_events` (use `start="today"` / `"this_week"`),
+  `caldav_list_attendees` (attendees are in `caldav_get_event_by_uid`).
+- Header mode (`X-Caldav-*`), "pro" mode (`DB_CONFIG_ENABLED`, SQLite store, `caldav-mcp-config` CLI, credential
+  encryption, multi-remote fan-out, dotted addressing), `CALDAV_MCP_LOG_FORMAT`, `server.py`.
+- Parameters: `attendees` and `priority` on create (invitations are a separate, deliberate step); empty strings meaning
+  "unchanged" on update.
 
-### Features
-- 14 MCP tools for CalDAV calendar operations
-- Streamable HTTP transport (no stdio)
-- Two-layer authentication (API key + CalDAV credentials)
-- Per-request multi-account support via HTTP headers
-- Thread-safe LRU client cache (max 8, 1h TTL)
-- Per-IP rate limiting with exponential backoff
-- Structured JSON audit logging
-- Docker multi-stage build (Alpine, non-root)
-- TLS termination support
-- Timezone-aware date handling
+### Fixed
+- Unknown UID answered "Internal error" instead of not found.
+- An unknown or unavailable time zone silently became UTC (it is now a startup error, and `tzdata` ships with the image).
+- A mistyped `CALDAV_MCP_CALDAV_VERIFY_SSL` could disable certificate verification.
+- Search downloaded every event and ignored recurrence; the date and time handling had inclusive/exclusive ambiguities.
 
-### Providers tested
-- Radicale (CI-tested in integration tests)
-- Nextcloud (development use)
+### Migrating
+New settings: `CALDAV_ALLOW_TOOLS`, `CALDAV_DENY_TOOLS`, `CALDAV_MCP_ALLOW_NO_AUTH`, `CALDAV_MCP_TRUST_PROXY`,
+`CALDAV_ALLOW_PLAINTEXT`, `CALDAV_DEFAULT_CALENDAR`, `CALDAV_MAX_EVENTS`, `CALDAV_WEEK_START`,
+`CALDAV_TIMEOUT_SECONDS`. Update tool allow-lists in clients: drop the three removed tools. Parameter names changed
+(`calendar_name` is `calendars` on reads and `calendar` elsewhere); see `docs/tools.md`.
 
-### Known limitations
-- `caldav_search_events` is client-side (server-side REPORT search planned)
-- `caldav_move_event` uses copy+delete (native MOVE planned)
+## 0.2.1 and earlier
+
+See the upstream project, [gelse/caldav-mcp](https://github.com/gelse/caldav-mcp).

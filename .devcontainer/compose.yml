@@ -1,0 +1,27 @@
+# podman-compose puts all services in one pod by default, which conflicts with
+# `userns_mode: keep-id` on the dev service ("--userns and --pod cannot be set
+# together"). Services still reach each other by name via the compose network.
+x-podman:
+  in_pod: false
+
+services:
+  app:
+    image: ghcr.io/stkr22/devcontainer-python-container:1.5.0@sha256:94c35390676241f49f65561340fc23b59d7db15cdd878ad73a8f459ebae23b2c
+    command: sleep infinity
+    userns_mode: "keep-id"  # Podman: keeps your host UID
+    working_dir: /workspaces/caldav-mcp
+    volumes:
+      - ..:/workspaces/caldav-mcp:cached
+
+  # Radicale for `uv run pytest tests/integration`. It shares the dev container's
+  # network namespace on purpose, so the suite reaches it as
+  # http://127.0.0.1:5232 (CALDAV_TEST_URL overrides that). State is tmpfs, so
+  # every start is empty; the account is in tests/integration/radicale/users.
+  radicale:
+    image: ${RADICALE_IMAGE:-docker.io/tomsquest/docker-radicale:3.8.0.0}
+    network_mode: 'service:app'
+    volumes:
+      - ../tests/integration/radicale/config:/etc/radicale/config:ro
+      - ../tests/integration/radicale/users:/etc/radicale/users:ro
+    tmpfs:
+      - /data

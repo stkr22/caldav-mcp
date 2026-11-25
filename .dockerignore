@@ -11,10 +11,6 @@ __pycache__
 .env.*
 plans
 tests
-Makefile
-README.md
-docker-compose.yaml
-Dockerfile
+Containerfile
 .gitignore
 .dockerignore
-pyproject.toml

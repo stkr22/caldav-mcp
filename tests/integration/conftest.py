@@ -1,101 +1,203 @@
-"""Fixtures for CalDAV integration tests.
+"""Integration fixtures: a real CalDAV server (Radicale), a fixed clock, an in-process MCP client.
 
-Requires Radicale running via:
-    docker compose -f docker-compose.test.yaml up -d
-
-The RADICALE_URL defaults to http://localhost:5232/testuser/
+Start Radicale with the dev-container compose file (``radicale`` service, 127.0.0.1:5232) or, without
+Docker, ``RADICALE_PORT=5233 tests/integration/radicale-local.sh``. Point the suite at it with
+``CALDAV_TEST_URL`` (default ``http://127.0.0.1:5232``). The suite is skipped when nothing answers,
+unless ``CALDAV_REQUIRE_INTEGRATION=1`` (CI sets it), in which case an unreachable server fails.
 """
 
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import json
 import os
-import time
+import uuid
+from collections.abc import Callable, Iterator
+from datetime import datetime
+from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
-from caldav import DAVClient
+from caldav.davclient import DAVClient
+from fastmcp import Client
+from fastmcp.exceptions import ToolError
 
-RADICALE_URL = os.environ.get("RADICALE_URL", "http://localhost:5232")
-RADICALE_USER = os.environ.get("RADICALE_USER", "testuser")
-RADICALE_PASS = os.environ.get("RADICALE_PASS", "testpass")
+from caldav_mcp.app import create_server
+from caldav_mcp.config import Config, load_config
 
-RADICALE2_URL = os.environ.get("RADICALE2_URL", "http://localhost:5233")
-RADICALE2_USER = os.environ.get("RADICALE2_USER", "testuser")
-RADICALE2_PASS = os.environ.get("RADICALE2_PASS", "testpass")
-
-
-@pytest.fixture(scope="session")
-def radicale_url():
-    """Base URL of the Radicale server."""
-    return RADICALE_URL
+BASE = os.environ.get("CALDAV_TEST_URL", "http://127.0.0.1:5232").rstrip("/")
+USER = os.environ.get("CALDAV_TEST_USER", "testuser")
+PASSWORD = os.environ.get("CALDAV_TEST_PASSWORD", "testpass")
+BERLIN = ZoneInfo("Europe/Berlin")
+#: Wednesday 25 November 2026, mid-afternoon. Every relative date in the suite is relative to this.
+NOW = datetime(2026, 11, 25, 15, 30, tzinfo=BERLIN)
 
 
-@pytest.fixture(scope="session")
-def caldav_client(radicale_url):
-    """A real DAVClient connected to the Radicale test server.
-
-    Session-scoped to avoid reconnecting for every test.
-    """
-    client = DAVClient(
-        url=radicale_url,
-        username=RADICALE_USER,
-        password=RADICALE_PASS,
-    )
-    yield client
-    # No explicit close needed; session cleanup handles it.
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    for item in items:
+        if "tests/integration" in str(item.fspath):
+            item.add_marker(pytest.mark.integration)
 
 
 @pytest.fixture(scope="session")
-def radicale2_url():
-    """Base URL of the second Radicale server."""
-    return RADICALE2_URL
-
-
-@pytest.fixture(scope="session")
-def radicale2_client(radicale2_url):
-    """A real DAVClient connected to the second Radicale test server.
-
-    Session-scoped to avoid reconnecting for every test.
-    """
-    client = DAVClient(
-        url=radicale2_url,
-        username=RADICALE2_USER,
-        password=RADICALE2_PASS,
-    )
-    yield client
-    # No explicit close needed; session cleanup handles it.
-
-
-@pytest.fixture()
-def test_calendar(caldav_client):
-    """Create a fresh test calendar and clean up after the test.
-
-    Yields the caldav.Calendar object.
-    """
-    principal = caldav_client.principal()
-    cal_name = f"integration-test-{int(time.time() * 1000)}"
-    cal = principal.make_calendar(name=cal_name)
-    yield cal
-    # Cleanup: delete calendar and all its events
+def dav() -> Iterator[DAVClient]:
+    client = DAVClient(url=f"{BASE}/{USER}/", username=USER, password=PASSWORD, timeout=15, enable_rfc6764=False)
     try:
-        for event in cal.events():
-            event.delete()
-        cal.delete()
-    except Exception:
-        pass  # Best-effort cleanup
+        client.principal().calendars()
+    except Exception as exc:
+        if os.environ.get("CALDAV_REQUIRE_INTEGRATION") == "1":
+            raise
+        pytest.skip(f"no CalDAV server at {BASE} ({type(exc).__name__}); see tests/integration/conftest.py")
+    yield client
 
 
-@pytest.fixture()
-def populated_calendar(test_calendar):
-    """A test calendar pre-populated with sample events."""
-    from datetime import datetime
+@pytest.fixture
+def config() -> Config:
+    env = {
+        "CALDAV_URL": f"{BASE}/{USER}/",
+        "CALDAV_USERNAME": USER,
+        "CALDAV_PASSWORD": PASSWORD,
+        "CALDAV_MCP_API_KEY": "integration-test-key-0123456789",
+        "TZ": "Europe/Berlin",
+    }
+    return load_config(env)
 
-    from icalendar import Calendar, Event
 
-    for i in range(3):
-        ev = Event()
-        ev.add("uid", f"test-event-{i}@integration-test")
-        ev.add("summary", f"Test Event {i}")
-        ev.add("dtstart", datetime(2026, 1, 15, 10 + i, 0))
-        ev.add("dtend", datetime(2026, 1, 15, 11 + i, 0))
-        cal = Calendar()
-        cal.add_component(ev)
-        test_calendar.save_event(cal.to_ical())
-    return test_calendar
+@pytest.fixture
+def make_calendar(dav: DAVClient) -> Iterator[Callable[..., Any]]:
+    created: list[Any] = []
+
+    def make(name: str | None = None) -> Any:
+        cal = dav.principal().make_calendar(name=name or f"it-{uuid.uuid4().hex[:8]}")
+        created.append(cal)
+        return cal
+
+    yield make
+    for cal in created:
+        with contextlib.suppress(Exception):  # best-effort cleanup
+            cal.delete()
+
+
+@pytest.fixture
+def cal(make_calendar: Callable[..., Any]) -> Any:
+    return make_calendar()
+
+
+@pytest.fixture
+def server(config: Config, dav: DAVClient, cal: Any):
+    """The MCP server with the clock fixed at NOW; depends on `cal` so a calendar exists."""
+    return create_server(config, clock=lambda: NOW)
+
+
+class Agent:
+    """Calls tools the way an MCP client does, and parses the JSON answer."""
+
+    def __init__(self, mcp: Any) -> None:
+        self.mcp = mcp
+
+    def raw(self, tool: str, **args: Any) -> Any:
+        async def run() -> Any:
+            async with Client(self.mcp) as client:
+                return await client.call_tool(tool, args, raise_on_error=False)
+
+        return asyncio.run(run())
+
+    def call(self, tool: str, **args: Any) -> dict[str, Any]:
+        result = self.raw(tool, **args)
+        if result.is_error:
+            raise ToolError(result.content[0].text)
+        return json.loads(result.content[-1].text)
+
+    def fails(self, tool: str, **args: Any) -> str:
+        result = self.raw(tool, **args)
+        assert result.is_error, f"expected {tool} to fail, got {result.content[0].text[:200]}"
+        return result.content[0].text
+
+
+@pytest.fixture
+def agent(server: Any) -> Agent:
+    return Agent(server)
+
+
+def ics(*events: str) -> str:
+    return "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//EN\r\n" + "".join(events) + "END:VCALENDAR\r\n"
+
+
+def vevent(uid: str, summary: str, *lines: str) -> str:
+    body = [f"UID:{uid}", "DTSTAMP:20260101T000000Z", f"SUMMARY:{summary}", *lines]
+    return "BEGIN:VEVENT\r\n" + "".join(f"{line}\r\n" for line in body) + "END:VEVENT\r\n"
+
+
+def timed(uid: str, summary: str, start: str, end: str, *extra: str) -> str:
+    return vevent(uid, summary, f"DTSTART;TZID=Europe/Berlin:{start}", f"DTEND;TZID=Europe/Berlin:{end}", *extra)
+
+
+def allday(uid: str, summary: str, first: str, last_exclusive: str, *extra: str) -> str:
+    return vevent(uid, summary, f"DTSTART;VALUE=DATE:{first}", f"DTEND;VALUE=DATE:{last_exclusive}", *extra)
+
+
+def titles(answer: dict[str, Any]) -> list[str]:
+    return [e["summary"] for e in answer["events"]]
+
+
+@pytest.fixture
+def seeded(cal: Any) -> Any:
+    """A calendar with the awkward cases in it."""
+    put = cal.save_event
+    put(
+        ics(
+            timed(
+                "dentist",
+                "Dentist",
+                "20261126T100000",
+                "20261126T110000",
+                "LOCATION:Praxis Dr. Roth",
+                'ATTENDEE;CN="Anna Meier":mailto:anna@example.com',
+                "DESCRIPTION:Bring the X-rays",
+            )
+        )
+    )
+    put(ics(allday("birthday", "Birthday", "20261128", "20261129")))
+    put(ics(timed("dinner", "Dinner", "20261129T180000", "20261129T190000")))
+    put(ics(timed("night", "Night shift", "20261126T230000", "20261127T010000")))
+    put(ics(vevent("floaty", "Floaty", "DTSTART:20261127T120000", "DTEND:20261127T130000")))
+    put(ics(timed("zahn", "Zahn\u00e4rztin M\u00fcller", "20261202T090000", "20261202T100000")))
+    put(ics(timed("old", "Old meeting", "20261020T090000", "20261020T100000")))
+    put(
+        ics(
+            timed(
+                "standup",
+                "Standup",
+                "20261102T100000",
+                "20261102T103000",
+                "RRULE:FREQ=WEEKLY;COUNT=10",
+                "EXDATE;TZID=Europe/Berlin:20261116T100000",
+            ),
+            timed(
+                "standup",
+                "Standup (moved)",
+                "20261123T150000",
+                "20261123T153000",
+                "RECURRENCE-ID;TZID=Europe/Berlin:20261123T100000",
+            ),
+        )
+    )
+    return cal
+
+
+def stored(cal: Any, uid: str) -> Any:
+    """Read an event back from the server as a parsed iCalendar object."""
+    from icalendar import Calendar  # noqa: PLC0415
+
+    return Calendar.from_ical(cal.get_event_by_uid(uid).data)
+
+
+def raw(cal: Any, uid: str) -> str:
+    """The stored iCalendar text of an event."""
+    return str(cal.get_event_by_uid(uid).data)
+
+
+def count_events(cal: Any) -> int:
+    """How many resources the calendar holds."""
+    return len(cal.events())
