@@ -1,19 +1,19 @@
 # ── Stage 1: build dependencies ──────────────────────────────────
-# Runtime uses 3.13 (matches requires-python); dependencies are resolved from uv.lock.
+# Runtime uses 3.15 (matches requires-python); dependencies are resolved from uv.lock.
 # Pin to exact patch tag for reproducible builds.
-FROM python:3.13.5-alpine3.21 AS builder
+FROM python:3.15.2-alpine3.24 AS builder
 
 WORKDIR /build
 
 # Install build deps once; the wheel cache survives into stage 2 only if
 # we copy it explicitly.
-COPY --from=ghcr.io/astral-sh/uv:0.11.7 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.13.10 /uv /usr/local/bin/uv
 COPY pyproject.toml uv.lock ./
 RUN uv export --frozen --no-dev --no-emit-project --no-hashes -o requirements.txt \
  && uv pip install --system --no-cache --prefix /install -r requirements.txt
 
 # ── Stage 2: slim runtime ────────────────────────────────────────
-FROM python:3.13.5-alpine3.21
+FROM python:3.15.2-alpine3.24
 
 RUN addgroup -S app && adduser -S app -G app
 
