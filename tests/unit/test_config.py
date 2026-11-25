@@ -165,3 +165,18 @@ class TestTimeAndLimits:
     def test_tls_cert_and_key_come_together(self):
         with pytest.raises(ConfigError, match="together"):
             load_config(env(CALDAV_MCP_TLS_CERT="/c.pem"))
+
+
+def test_tools_that_never_listen_need_no_inbound_key():
+    e = env()
+    del e["CALDAV_MCP_API_KEY"]
+    assert load_config(e, serving=False, scrub=False).api_key == ""
+    with pytest.raises(ConfigError, match="CALDAV_MCP_ALLOW_NO_AUTH"):
+        load_config(e, scrub=False)
+
+
+def test_the_image_does_not_depend_on_a_system_time_zone_database():
+    """Alpine images ship none. Without the tzdata package a named zone fails (the old server fell back to UTC)."""
+    import tzdata  # noqa: F401, PLC0415 - the point is that it is importable
+
+    assert load_config(env(TZ="Europe/London")).tz_name == "Europe/London"

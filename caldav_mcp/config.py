@@ -162,12 +162,13 @@ def _optional_list(env: MutableMapping[str, str], name: str) -> str | None:
     return raw.strip()
 
 
-def load_config(env: MutableMapping[str, str], *, scrub: bool = True) -> Config:
+def load_config(env: MutableMapping[str, str], *, scrub: bool = True, serving: bool = True) -> Config:
     """Validate *env* and build a :class:`Config`.
 
     With ``scrub`` (the default) the password, username and API key are removed
     from *env* before anything can fail, so a refusal to start leaves nothing
-    behind either.
+    behind either. ``serving=False`` is for command-line tools that never open a
+    listening port (the capability probe), which therefore need no inbound key.
     """
     url = env.get("CALDAV_URL", "").strip()
     username = env.get("CALDAV_USERNAME", "")
@@ -185,7 +186,7 @@ def load_config(env: MutableMapping[str, str], *, scrub: bool = True) -> Config:
     url = _validate_url(url, allow_plaintext=_strict_true(env.get("CALDAV_ALLOW_PLAINTEXT")))
 
     allow_no_auth = _strict_true(env.get("CALDAV_MCP_ALLOW_NO_AUTH"))
-    if not api_key and not allow_no_auth:
+    if serving and not api_key and not allow_no_auth:
         raise ConfigError(
             "CALDAV_MCP_API_KEY is not set, so the endpoint would accept anyone. Set a key of at least "
             f"{MIN_API_KEY_LENGTH} characters, or set CALDAV_MCP_ALLOW_NO_AUTH=true to run without one."

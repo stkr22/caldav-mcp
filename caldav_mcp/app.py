@@ -20,7 +20,7 @@ from caldav_mcp.httpauth import HEALTH_PATH, ApiKeyMiddleware
 from caldav_mcp.ratelimit import RateLimiter
 from caldav_mcp.session import Session
 from caldav_mcp.toolfilter import build_tool_filter
-from caldav_mcp.tools import read
+from caldav_mcp.tools import attendees, read, write
 from caldav_mcp.tools.common import App
 
 log = logging.getLogger("caldav-mcp")
@@ -54,6 +54,8 @@ def create_server(
         return PlainTextResponse("ok")
 
     read.register(mcp, app, tool_filter.enabled)
+    write.register(mcp, app, tool_filter.enabled)
+    attendees.register(mcp, app, tool_filter.enabled)
     return mcp
 
 

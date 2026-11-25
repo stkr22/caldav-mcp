@@ -184,3 +184,20 @@ def seeded(cal: Any) -> Any:
         )
     )
     return cal
+
+
+def stored(cal: Any, uid: str) -> Any:
+    """Read an event back from the server as a parsed iCalendar object."""
+    from icalendar import Calendar  # noqa: PLC0415
+
+    return Calendar.from_ical(cal.get_event_by_uid(uid).data)
+
+
+def raw(cal: Any, uid: str) -> str:
+    """The stored iCalendar text of an event."""
+    return str(cal.get_event_by_uid(uid).data)
+
+
+def count_events(cal: Any) -> int:
+    """How many resources the calendar holds."""
+    return len(cal.events())

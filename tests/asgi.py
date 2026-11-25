@@ -1,6 +1,7 @@
 """Call an ASGI app in-process, without a web client library."""
 
 import asyncio
+from collections.abc import MutableMapping
 from typing import Any
 
 from starlette.types import ASGIApp
@@ -27,12 +28,12 @@ def request(
         "server": ("test", 80),
         "scheme": "http",
     }
-    sent: list[dict[str, Any]] = []
+    sent: list[MutableMapping[str, Any]] = []
 
     async def receive() -> dict[str, Any]:
         return {"type": "http.request", "body": b"", "more_body": False}
 
-    async def send(message: dict[str, Any]) -> None:
+    async def send(message: MutableMapping[str, Any]) -> None:
         sent.append(message)
 
     asyncio.run(app(scope, receive, send))

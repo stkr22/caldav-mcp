@@ -4,10 +4,10 @@ build-backend = "uv_build"
 
 [project]
 name = "caldav-mcp"
-version = "0.2.1"
-description = "MCP server for CalDAV calendar integration (read/write events), Streamable HTTP transport"
+version = "0.3.0"
+description = "MCP server that gives an LLM agent compact, safe read/write access to a CalDAV calendar over Streamable HTTP"
 authors = [
-    { name = "stkr22", email = "stkr22@github.com" }
+    { name = "stkr22" }
 ]
 readme = "README.md"
 requires-python = ">=3.15"
@@ -18,9 +18,14 @@ classifiers = [
     "Programming Language :: Python :: 3.15",
 ]
 dependencies = [
-    "icalendar>=7.2",
-    "caldav>=3.2",
-    "fastmcp>=3.4",
+    "caldav>=3.7",
+    "fastmcp>=4.2",
+    "icalendar>=7.3",
+    "lxml>=6.0",
+    "python-dateutil>=2.9",
+    "recurring-ical-events>=3.8",
+    "niquests>=3.15",
+    "tzdata>=2025.2",
 ]
 
 [project.scripts]
@@ -28,10 +33,10 @@ caldav-mcp = "caldav_mcp.app:main"
 caldav-mcp-probe = "caldav_mcp.probe:main"
 
 [project.urls]
-Homepage = "https://github.com/gelse/caldav-mcp"
-Issues = "https://github.com/gelse/caldav-mcp/issues"
-Documentation = "https://github.com/gelse/caldav-mcp/tree/main/docs"
-Repository = "https://github.com/gelse/caldav-mcp"
+Homepage = "https://github.com/stkr22/caldav-mcp"
+Issues = "https://github.com/stkr22/caldav-mcp/issues"
+Documentation = "https://github.com/stkr22/caldav-mcp/tree/main/docs"
+Repository = "https://github.com/stkr22/caldav-mcp"
 
 [dependency-groups]
 dev = [
@@ -40,11 +45,6 @@ dev = [
     "pytest>=8.4",
     "pytest-cov>=6",
     "pytest-timeout>=2.4",
-    "pytest-benchmark>=5.1",
-]
-docs = [
-    "sphinx>=7.0",
-    "sphinx-rtd-theme>=2.0",
 ]
 
 [tool.uv]
@@ -62,12 +62,11 @@ unused-ignore-comment = "warn"
 minversion = "8.0"
 addopts = ["-ra", "-q"]
 testpaths = ["tests"]
-pythonpath = ["."]  # server.py is a repo-root entrypoint, not part of the wheel
+pythonpath = ["."]  # tests import shared helpers as `tests.*`
 timeout = 60
 markers = [
     "unit: pure unit tests with no external dependencies",
-    "integration: tests against a live CalDAV server (Radicale via Docker)",
-    "performance: benchmarks and load tests",
+    "integration: tests against a live CalDAV server (Radicale; see tests/integration/conftest.py)",
     "slow: tests that take more than a few seconds",
 ]
 
