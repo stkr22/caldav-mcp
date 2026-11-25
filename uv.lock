@@ -125,10 +125,8 @@ version = "0.2.1"
 source = { editable = "." }
 dependencies = [
     { name = "caldav" },
-    { name = "cryptography" },
     { name = "fastmcp" },
     { name = "icalendar" },
-    { name = "requests" },
 ]
 
 [package.dev-dependencies]
@@ -148,10 +146,8 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "caldav", specifier = ">=3.2" },
-    { name = "cryptography", specifier = ">=44.0.1" },
     { name = "fastmcp", specifier = ">=3.4" },
     { name = "icalendar", specifier = ">=7.2" },
-    { name = "requests", specifier = ">=2.32" },
 ]
 
 [package.metadata.requires-dev]

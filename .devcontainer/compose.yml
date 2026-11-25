@@ -13,20 +13,15 @@ services:
     volumes:
       - ..:/workspaces/caldav-mcp:cached
 
-  # Radicale for `npm run test:integration`, sharing the dev container's network
-  # namespace on purpose: the suite insists on a loopback backend
-  # (`assertLoopback`) and addresses it as http://127.0.0.1:5232, which a
-  # separate compose network would not give it. State is in memory, so every
-  # start is empty.
-  #
-  # Baikal is not here: its bootstrap seeds the account with
-  # `docker compose exec`, which a dev container has no way to run. Run that
-  # suite from the host with test/integration/compose.yml.
+  # Radicale for `uv run pytest tests/integration`. It shares the dev container's
+  # network namespace on purpose, so the suite reaches it as
+  # http://127.0.0.1:5232 (CALDAV_TEST_URL overrides that). State is tmpfs, so
+  # every start is empty; the account is in tests/integration/radicale/users.
   radicale:
     image: ${RADICALE_IMAGE:-docker.io/tomsquest/docker-radicale:3.8.0.0}
     network_mode: 'service:app'
     volumes:
-      - ../test/integration/radicale/config:/etc/radicale/config:ro
-      - ../test/integration/radicale/users:/etc/radicale/users:ro
+      - ../tests/integration/radicale/config:/etc/radicale/config:ro
+      - ../tests/integration/radicale/users:/etc/radicale/users:ro
     tmpfs:
       - /data
