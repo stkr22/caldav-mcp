@@ -58,9 +58,10 @@ class Traffic:
 def test_a_week_agenda_is_one_bounded_query(agent, big, dav, monkeypatch):
     traffic = Traffic(monkeypatch, dav)
     started = time.monotonic()
-    answer = agent.call("caldav_get_events", start="2026-06-01", end="2026-06-07", calendars=[big.id])
+    answer = agent.call("caldav_get_events", start="2026-06-01", end="2026-06-07", calendars=[big.id], limit=100)
     elapsed = time.monotonic() - started
-    assert 35 <= answer["total"] <= 60 and answer["count"] == answer["total"]
+    # About 29 one-off events plus 5 daily series x 7 days; the calendar's other 1,400+ events are never fetched.
+    assert 55 <= answer["total"] <= 70 and answer["count"] == answer["total"]
     assert traffic.requests.count("REPORT") == 1 and "GET" not in traffic.requests
     assert traffic.bytes < 150_000, f"{traffic.bytes} bytes moved for one week of a {EVENTS}-event calendar"
     assert elapsed < 5
@@ -103,6 +104,9 @@ def test_a_text_search_is_narrowed_by_the_server(agent, big, dav, monkeypatch):
 
 def test_the_next_occurrence_of_a_title_is_one_cheap_call(agent, big):
     started = time.monotonic()
-    answer = agent.call("caldav_search_events", query="quarterly", limit=1, calendars=[big.id], start="2026-03-01")
+    # A date-time start looks forward a year; a date-only start would cover just that day.
+    answer = agent.call(
+        "caldav_search_events", query="quarterly", limit=1, calendars=[big.id], start="2026-03-01T00:00"
+    )
     assert answer["count"] == 1 and answer["events"][0]["summary"] == "Quarterly review"
     assert time.monotonic() - started < 15
