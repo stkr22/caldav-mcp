@@ -8,12 +8,9 @@
    cd caldav-mcp
    ```
 
-2. Create a virtual environment and install dependencies:
+2. Install [uv](https://docs.astral.sh/uv/) and sync dependencies:
    ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   pip install -e ".[dev]"
+   uv sync --dev
    ```
 
 3. Copy `.env.example` to `.env` and configure your CalDAV credentials.
@@ -21,16 +18,16 @@
 ## Running Checks
 
 ```bash
-make check       # lint + typecheck + deps-check + tests
-make lint        # ruff check + format check
-make typecheck   # mypy
-make test        # pytest
+uv run ruff check .             # lint
+uv run ruff format --check .     # format check
+uv run ty check                  # type check
+uv run pytest tests/unit         # unit tests
 ```
 
 ## Code Style
 
-- **Linting**: Ruff with rules `E`, `F`, `I`, `UP`. Line length 100.
-- **Type checking**: mypy with `python_version = "3.11"`.
+- **Linting**: Ruff with the rule set in `pyproject.toml`. Line length 120.
+- **Type checking**: ty (configured under `[tool.ty]` in `pyproject.toml`).
 - **Docstrings**: Google or NumPy style. All public functions must have docstrings.
 - **Comments**: Explain *why*, not *what*. Add inline comments for non-obvious logic.
 
@@ -39,7 +36,7 @@ make test        # pytest
 - Tests live in `tests/`.
 - Use the fakes in `tests/conftest.py` (`FakeClient`, `FakeCalendar`, `FakeEvent`) to avoid network calls.
 - Patch shared state via `mock.patch.object(server, "<name>")` — this is how the existing test suite works.
-- Run the full suite before submitting: `make check`.
+- Run the full suite before submitting: the checks above.
 
 ## Architecture Rules
 

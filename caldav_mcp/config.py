@@ -36,7 +36,7 @@ HDR_MCP_USERNAME = "x-mcp-username"
 def _server_tz() -> tzinfo:
     """Return the configured server timezone.
 
-    Reads the TZ environment variable (e.g. 'Europe/Vienna'); falls back to
+    Reads the TZ environment variable (e.g. 'Europe/London'); falls back to
     UTC when TZ is unset, empty, or invalid.
     """
     tz_name = _server_config.tz

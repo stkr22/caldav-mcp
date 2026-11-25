@@ -1,7 +1,6 @@
 """Build the pro-mode SQLite store consumed by the ``mcp-pro`` compose service.
 
-Run before ``docker compose -f docker-compose.test.yaml up`` (the Makefile's
-``test-integration`` target invokes this script automatically)::
+Run before ``docker compose -f docker-compose.test.yaml up``::
 
     CALDAV_MCP_CONFIG_SECRET=<secret> python3 tests/integration/build_pro_store.py [db_path]
 

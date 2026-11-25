@@ -26,7 +26,7 @@ Test cases:
    ``calendar_name="main.radicale.work"`` succeeds.
 6. Plain-name write: ``caldav_create_event`` as ``alice`` with
    ``calendar_name="work"`` → typed rejection.
-7. Existing simple-mode suite untouched (verified by ``make test-integration``
+7. Existing simple-mode suite untouched (verified by ``pytest tests/integration``
    running all files).
 """
 

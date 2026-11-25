@@ -49,7 +49,7 @@ services:
       CALDAV_USERNAME: user
       CALDAV_PASSWORD: app-password
       CALDAV_MCP_API_KEY: your-secret-token
-      TZ: Europe/Vienna
+      TZ: Europe/London
 ```
 
 ```bash
@@ -200,7 +200,7 @@ to the internet without auth.
 `caldav_list_calendars` to see the exact names your server reports.
 
 **Events show wrong time** — Set the `TZ` environment variable to your IANA
-timezone (e.g. `Europe/Vienna`). Without it, today/week boundaries default
+timezone (e.g. `Europe/London`). Without it, today/week boundaries default
 to UTC.
 
 **SSL certificate errors** — For self-signed certs, either import the CA into

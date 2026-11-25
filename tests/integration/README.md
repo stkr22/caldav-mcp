@@ -9,7 +9,10 @@
 
 1. Run the integration tests (Radicale is started and stopped automatically):
    ```bash
-   make test-integration
+   uv run python tests/integration/build_pro_store.py
+   docker compose -f docker-compose.test.yaml up -d --build --wait
+   uv run pytest tests/integration/ -m integration --timeout=60
+   docker compose -f docker-compose.test.yaml down -v
    ```
 
    This will:
@@ -80,7 +83,7 @@ username would serve a healthy remote's cached session).
 
 Pro-mode tests (`test_pro_mode.py`, `test_multi_remote_fanout.py`) require the
 `mcp-pro` Docker Compose service running with `DB_CONFIG_ENABLED=true`. The
-Makefile builds the SQLite store automatically before starting compose. The MCP
+`build_pro_store.py` script must be run to build the SQLite store before starting compose. The MCP
 server is available at `http://localhost:8080/mcp`.
 
 Because both modules share that one service, the store built by

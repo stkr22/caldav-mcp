@@ -10,7 +10,7 @@ Bridge MCP-compatible AI clients (e.g. Claude, Codex) to CalDAV servers. The ser
 
 | Component | Detail |
 |-----------|--------|
-| Language | Python 3.13, Dockerized (Alpine multi-stage) |
+| Language | Python 3.13, uv-managed, Dockerized (Alpine multi-stage) |
 | MCP Framework | [FastMCP](https://github.com/jlowin/fastmcp) v3.4.7, Streamable HTTP |
 | CalDAV Client | [python-caldav](https://github.com/tobixen/python-caldav) v3.2.1 |
 | iCalendar | [icalendar](https://github.com/collective/icalendar) v7.2.2 (RFC 5545) |
@@ -52,9 +52,8 @@ caldav-mcp/
 ├── Dockerfile                   # Multi-stage Docker build
 ├── docker-compose.yaml          # Production compose (port 8600→8080)
 ├── docker-compose.test.yaml     # Test compose with Radicale
-├── requirements.txt             # Runtime dependencies
-├── pyproject.toml               # Dev config and dependencies
-└── Makefile                     # Build/test shortcuts
+├── pyproject.toml               # Project metadata, dependency groups, tool config (uv)
+├── uv.lock                      # Locked dependencies
 ```
 
 ## MCP Tools (14 total — 8 in read-only mode)
@@ -142,15 +141,18 @@ All config via environment variables, validated at startup with Pydantic:
 ## Development
 
 ```bash
+# Install dependencies
+uv sync --dev
+
 # Run tests
-make test
+uv run pytest tests/unit
 
 # Run integration tests (requires docker-compose.test.yaml)
-make test-integration
+uv run pytest tests/integration -m integration  # after docker compose -f docker-compose.test.yaml up -d --build --wait
 
 # Lint
-make lint
+uv run ruff check . && uv run ruff format --check .
 
 # Type check
-make typecheck
+uv run ty check
 ```
