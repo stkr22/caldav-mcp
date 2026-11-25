@@ -1,126 +1,88 @@
-# Configuration Reference
+# Configuration
 
-All configuration is via environment variables, validated at startup with
-Pydantic.
+All configuration is environment variables, read once at startup and validated. A bad value stops the server with a
+message naming the variable; nothing falls back silently. The CalDAV password, username and API key are removed from
+the process environment as soon as they are read.
 
-## Environment variables
+## Required
 
-### Server
+| Variable | |
+|---|---|
+| `CALDAV_URL` | Calendar home or principal URL. `http://` is refused unless the host is loopback (or `CALDAV_ALLOW_PLAINTEXT=true`). No credentials, query string or fragment in it. |
+| `CALDAV_USERNAME`, `CALDAV_PASSWORD` | The account. Most hosted services want an app-specific password. |
+| `CALDAV_MCP_API_KEY` | At least 16 characters. Required unless `CALDAV_MCP_ALLOW_NO_AUTH=true`. |
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `CALDAV_MCP_PORT` | `8080` | Listen port (inside container) |
-| `CALDAV_MCP_PATH` | `/mcp` | Streamable HTTP endpoint path |
-| `CALDAV_MCP_API_KEY` | `""` (disabled) | Shared secret for MCP endpoint auth |
-| `CALDAV_MCP_READ_ONLY` | `false` | Hide write tools; only query tools are exposed when `true` |
-| `CALDAV_MCP_CONFIG_SECRET` | `""` | Master secret for encrypting CalDAV passwords at rest in the SQLite store. Required by the CLI (encrypt) and server (decrypt). Changing it invalidates stored ciphertexts. |
-| `CALDAV_MCP_DB_PATH` | `""` | Path to the SQLite configuration store. Required by the CLI and by the server in pro mode; `--db` CLI flag takes precedence. |
-| `DB_CONFIG_ENABLED` | `false` | Enable pro mode: load config and users from the SQLite store; requires `CALDAV_MCP_DB_PATH` and `CALDAV_MCP_CONFIG_SECRET`; `CALDAV_MCP_API_KEY` is ignored. |
-| `TZ` | `""` (UTC) | IANA timezone (e.g. `Europe/Vienna`) for today/week boundaries |
+## Which tools exist
 
-### CalDAV
+| Variable | Default | |
+|---|---|---|
+| `CALDAV_ALLOW_TOOLS` | all | Exactly one of: comma-separated names; one prefix ending in `*`; the keyword `essential`. |
+| `CALDAV_DENY_TOOLS` | none | Same forms; subtracted from the allow list. |
+| `CALDAV_MCP_READ_ONLY` | `false` | `1`, `true` or `yes` (any case) hides every write tool. Applied last; it always wins. |
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `CALDAV_URL` | `""` | CalDAV server URL. When set, request headers are ignored and all credentials come from env (environment mode). When unset, `X-Caldav-*` headers are required (header mode). |
-| `CALDAV_USERNAME` | `""` | CalDAV username. Used in environment mode; ignored in header mode. |
-| `CALDAV_PASSWORD` | `""` | CalDAV password. Used in environment mode; ignored in header mode. |
-| `CALDAV_MCP_CALDAV_VERIFY_SSL` | `true` | Verify TLS certs on CalDAV connections. Set `false` only for testing with self-signed certs. |
+Names may be written with or without the `caldav_` prefix. An unknown name, a pattern that matches nothing, a
+mixed form (`caldav_get_*,caldav_x`) or a set-but-empty variable stops the server: a typo in a *deny* list would
+otherwise expose the tool it was meant to hide. Naming a write tool while read-only is on logs a warning (the tool
+is known; read-only is suppressing it). `essential` is `caldav_list_calendars, caldav_get_events,
+caldav_search_events, caldav_get_event_by_uid, caldav_get_freebusy, caldav_create_event, caldav_update_event`.
 
-### TLS
+The eleven tools: `caldav_list_calendars`, `caldav_get_events`, `caldav_search_events`, `caldav_get_event_by_uid`,
+`caldav_get_freebusy`, `caldav_create_event`, `caldav_update_event`, `caldav_delete_event`, `caldav_move_event`,
+`caldav_add_attendee`, `caldav_remove_attendee`.
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `CALDAV_MCP_TLS_CERT` | `""` | Path to TLS certificate PEM file |
-| `CALDAV_MCP_TLS_KEY` | `""` | Path to TLS private key PEM file |
-| `CALDAV_MCP_TLS_CA_BUNDLE` | `""` | Optional CA bundle for custom certificate authorities |
+## Behaviour
 
-### Rate limiting
+| Variable | Default | |
+|---|---|---|
+| `TZ` | `UTC` | IANA zone (`Europe/London`). Decides what "today" and "this week" mean and how date-only values are read. An unknown zone is a startup error. |
+| `CALDAV_WEEK_START` | `monday` | First day of the week for `this_week`, `next_week`, `last_week`. |
+| `CALDAV_DEFAULT_CALENDAR` | none | Calendar (name or id) new events go to when the caller names none. |
+| `CALDAV_MAX_EVENTS` | `50` | Default `limit` for lists; at most 500. |
+| `CALDAV_TIMEOUT_SECONDS` | `20` | How long to wait for the CalDAV server. |
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `CALDAV_MCP_RATE_LIMIT_MAX_FAILURES` | `10` | Max failed auth attempts per IP within the sliding window |
-| `CALDAV_MCP_RATE_LIMIT_WINDOW_SECONDS` | `60` | Sliding window duration in seconds |
+## HTTP server
 
-### Logging
+| Variable | Default | |
+|---|---|---|
+| `CALDAV_MCP_PORT` | `8080` | |
+| `CALDAV_MCP_PATH` | `/mcp` | Not `/health`, which is reserved for the unauthenticated probe route. |
+| `CALDAV_MCP_TLS_CERT`, `CALDAV_MCP_TLS_KEY` | none | Built-in TLS for the MCP endpoint; both or neither. |
+| `CALDAV_MCP_TLS_CA_BUNDLE` | none | Require client certificates signed by this CA. |
+| `CALDAV_MCP_TRUST_PROXY` | `false` | Exactly `true`: behind one proxy that sets `X-Forwarded-For`, rate-limit by its rightmost entry. |
+| `CALDAV_MCP_RATE_LIMIT_MAX_FAILURES` | `10` | Failed key attempts per address before it is blocked (with growing back-off). |
+| `CALDAV_MCP_RATE_LIMIT_WINDOW_SECONDS` | `60` | |
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `CALDAV_MCP_LOG_FORMAT` | `text` | Audit log format: `text` or `json` |
+`GET /health` returns `ok` with no key. Everything else needs the key, including `initialize` and `tools/list`.
 
-## Deployment patterns
+## Settings that lower protection
 
-### Install from a release
+Read strictly: only the exact spelling has effect, and an unrecognised value stops the server.
 
-```bash
-git clone --branch v0.1.0 https://github.com/gelse/caldav-mcp.git
-cd caldav-mcp
-cp .env.example .env
-# Edit .env with your CalDAV credentials
-docker compose up -d
-```
+| Variable | |
+|---|---|
+| `CALDAV_MCP_ALLOW_NO_AUTH=true` | Run without an API key. Logs a warning at startup. |
+| `CALDAV_MCP_CALDAV_VERIFY_SSL=false` | Do not verify the CalDAV server's certificate (default `true`; only `true`/`false`/`1`/`0`/`yes`/`no` are accepted, so a typo cannot disable it). |
+| `CALDAV_ALLOW_PLAINTEXT=true` | Allow `http://` to a non-loopback CalDAV host. |
 
-### Local / private deployment
+## Logging
 
-The simplest setup — AI client and caldav-mcp on the same machine:
+One JSON line per tool call (tool name, outcome, duration) and per rejected request (address, reason), on stderr.
+Never logged: the API key, credentials, queries, or anything from an event.
 
-```
-AI Client → http://localhost:8600/mcp → CalDAV Server
-```
+## Verifying against a new server
 
-```bash
-docker compose up -d
-```
-
-The server listens on `localhost:8600` and is not accessible from the
-network unless you explicitly publish the port.
-
-### Remote / shared deployment
-
-For multi-user or remote access, put the server behind a TLS-terminating
-reverse proxy:
-
-```
-AI Client → HTTPS → reverse proxy → caldav-mcp → CalDAV Server
-```
-
-```nginx
-server {
-    listen 443 ssl;
-    server_name caldav-mcp.example.com;
-
-    ssl_certificate     /etc/ssl/certs/caldav-mcp.pem;
-    ssl_certificate_key /etc/ssl/private/caldav-mcp-key.pem;
-
-    location /mcp {
-        proxy_pass http://127.0.0.1:8600/mcp;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-### Built-in TLS
-
-If you prefer not to use a reverse proxy, enable built-in TLS:
+Servers differ in ways that change answers. Run the probe (read-only; prints only capability facts, never an event,
+a calendar name or the URL) before relying on a server:
 
 ```bash
-CALDAV_MCP_TLS_CERT=/path/to/cert.pem \
-CALDAV_MCP_TLS_KEY=/path/to/key.pem \
-docker compose up -d
+CALDAV_URL=... CALDAV_USERNAME=... CALDAV_PASSWORD=... caldav-mcp-probe        # add --json for a machine-readable form
 ```
 
-> ⚠️ **Do not expose the MCP endpoint publicly without both authentication
-> and TLS.** Without `CALDAV_MCP_API_KEY` set, the endpoint is open. Without
-> TLS, all traffic — including API keys and CalDAV passwords — is transmitted
-> in plaintext.
-
-## Deployment recommendations
-
-- Bind to `127.0.0.1` or a private network unless you need remote access.
-- Restrict access at the network/firewall layer to trusted hosts or a VPN.
-- Never commit CalDAV app passwords to version control.
-- Use a reverse proxy for TLS termination in production.
-- For read-only deployments, set `CALDAV_MCP_READ_ONLY=true`.
+| Fact | Why it matters |
+|---|---|
+| `scheduling_advertised` | If true, adding an attendee may make the server email an invitation. Keep the attendee tools off unless you want that. |
+| `results_carry_etags`, `etag_header_on_resource` | Without ETags, writes are unconditional and say so. |
+| `text_match_folds_ascii_case` | If false, server-side text search would miss differently-cased text; this server always re-checks locally, but it narrows less. |
+| `server_side_expand_status`, `free_busy_query_status` | Informational: recurrences are expanded by this server and free/busy is computed from events, so neither is required. |
+| `move_allowed_on_resource` | If false, `caldav_move_event` copies then deletes. |
+| `time_range_query_status` | Must be 207; otherwise nothing will work. |

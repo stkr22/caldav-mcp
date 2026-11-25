@@ -1,7 +1,7 @@
 # caldav-mcp
 
 An [MCP](https://modelcontextprotocol.io) server that gives an LLM agent compact, safe access to a CalDAV
-calendar (Nextcloud, Radicale, Baikal, Fastmail, ...) over Streamable HTTP.
+calendar (Nextcloud, Radicale, Baikal, Fastmail, hosted services, ...) over Streamable HTTP.
 
 It started as a fork of [gelse/caldav-mcp](https://github.com/gelse/caldav-mcp) and is now a different program:
 built for an agent doing everyday calendar work with a small context window, where the failure that matters is a
@@ -116,5 +116,6 @@ More in [docs/contributing.md](docs/contributing.md) and [docs/architecture.md](
 
 ## Status
 
-Tested against Radicale. Not yet verified against your own server: run the probe against it and read
+Developed and tested against Radicale. Other servers differ in small ways (text matching, free/busy, MOVE, ETags,
+scheduling), so run `caldav-mcp-probe` against yours and read
 [docs/configuration.md](docs/configuration.md#verifying-against-a-new-server) first.
