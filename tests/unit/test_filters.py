@@ -217,6 +217,7 @@ class TestServerPlan:
             fields=["summary", "location"],
             where={"all": [{"field": "summary", "op": "starts_with", "value": "Den"}]},
         )
+        assert node is not None
         plan = plan_server_filter(node)
         for field, term in plan.terms:
             assert field == "summary" and term == "Den"

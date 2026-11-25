@@ -6,23 +6,24 @@ import pytest
 
 from caldav_mcp.errors import ResultTooLargeError
 from caldav_mcp.results import budget, dumps, emitted_bytes, fenced_untrusted_result, own_words_result, untrusted_result
+from tests.helpers import structured, text
 
 
 def test_untrusted_result_is_marked_and_both_channels_agree():
     result = untrusted_result({"events": [{"summary": "x"}]})
-    assert result.structured_content["untrusted"] is True
-    assert result.structured_content["source"] == "caldav"
-    assert json.loads(result.content[0].text) == result.structured_content
+    assert structured(result)["untrusted"] is True
+    assert structured(result)["source"] == "caldav"
+    assert json.loads(text(result, 0)) == structured(result)
 
 
 def test_content_cannot_switch_the_marker_off():
     result = untrusted_result({"untrusted": False, "source": "me", "events": []})
-    assert result.structured_content["untrusted"] is True
-    assert result.structured_content["source"] == "caldav"
+    assert structured(result)["untrusted"] is True
+    assert structured(result)["source"] == "caldav"
 
 
 def test_own_words_carry_no_marker():
-    assert "untrusted" not in own_words_result({"deleted": 1}).structured_content
+    assert "untrusted" not in structured(own_words_result({"deleted": 1}))
 
 
 def test_json_is_compact_and_keeps_unicode():
@@ -60,11 +61,11 @@ def test_bytes_not_characters_are_measured():
 
 def test_fenced_result_has_warning_fence_and_structured_value():
     result = fenced_untrusted_result({"event": {"uid": "u"}}, "Title: hi", ["calendar-command"])
-    assert result.content[0].text.startswith("!! WARNING")
-    assert "BEGIN UNTRUSTED EVENT CONTENT" in result.content[0].text
-    assert result.structured_content["untrusted"] is True
+    assert text(result, 0).startswith("!! WARNING")
+    assert "BEGIN UNTRUSTED EVENT CONTENT" in text(result, 0)
+    assert structured(result)["untrusted"] is True
 
 
 def test_fenced_result_without_signals_has_no_warning():
     result = fenced_untrusted_result({"event": {}}, "Title: hi", [])
-    assert not result.content[0].text.startswith("!!")
+    assert not text(result, 0).startswith("!!")
