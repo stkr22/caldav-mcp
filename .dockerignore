@@ -11,8 +11,6 @@ __pycache__
 .env.*
 plans
 tests
-README.md
-docker-compose.yaml
-Dockerfile
+Containerfile
 .gitignore
 .dockerignore
